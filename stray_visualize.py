@@ -157,7 +157,9 @@ def integrate(flags, data):
 
         print(f"Integrating frame {i:06} / {n_steps:06}", end='\r')
         depth_path = os.path.join(flags.path, 'depth', f'{i:06}.npy')
-        depth = load_depth(depth_path)
+        confidence_path = os.path.join(flags.path, 'confidence', f'{i:06}.png')
+        confidence = load_confidence(confidence_path)
+        depth = load_depth(depth_path, confidence, filter_level=flags.confidence)
         rgb = Image.fromarray(rgb)
         rgb = rgb.resize((DEPTH_WIDTH, DEPTH_HEIGHT))
         rgb = np.array(rgb)
