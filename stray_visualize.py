@@ -25,7 +25,9 @@ def read_args():
     parser.add_argument('--point-clouds', '-p', action='store_true', help="Show concatenated point clouds.")
     parser.add_argument('--integrate', '-i', action='store_true', help="Integrate point clouds using the Open3D RGB-D integration pipeline, and visualize it.")
     parser.add_argument('--mesh_filename', type=str, help='Mesh generated from point cloud integration will be stored in this file. open3d.io.write_triangle_mesh will be used.', default=None)
+    parser.add_argument('--pointcloud_filename', type=str, help='Pointcloud generated from point cloud integration will be stored in this file. open3d.io.write_point_cloud will be used.', default=None)
     parser.add_argument('--every', type=int, default=60, help="Show only every nth point cloud and coordinate frames. Only used for point cloud and odometry visualization.")
+    parser.add_argument('--integrate_every', type=int, default=1, help="Integrate only every nth point cloud. Only used in pointcloud integration.")
     parser.add_argument('--voxel-size', type=float, default=0.015, help="Voxel size in meters to use in RGB-D integration.")
     parser.add_argument('--confidence', '-c', type=int, default=1,
             help="Keep only depth estimates with confidence equal or higher to the given value. There are three different levels: 0, 1 and 2. Higher is more confident.")
@@ -132,6 +134,9 @@ def integrate(flags, data):
     """
     Integrates collected RGB-D maps using the Open3D integration pipeline.
 
+    Uses `open3d.pipelines.integration.ScalableTSDFVolume
+    <http://www.open3d.org/docs/release/python_api/open3d.pipelines.integration.ScalableTSDFVolume.html>`_.
+
     flags: command line arguments
     data: dict with keys ['intrinsics', 'poses']
     Returns: open3d.geometry.TriangleMesh
@@ -145,8 +150,12 @@ def integrate(flags, data):
 
     rgb_path = os.path.join(flags.path, 'rgb.mp4')
     video = skvideo.io.vreader(rgb_path)
+    n_steps = len(data['poses'])
     for i, (T_WC, rgb) in enumerate(zip(data['poses'], video)):
-        print(f"Integrating frame {i:06}", end='\r')
+        if i % flags.integrate_every != 0:
+            continue
+
+        print(f"Integrating frame {i:06} / {n_steps:06}", end='\r')
         depth_path = os.path.join(flags.path, 'depth', f'{i:06}.npy')
         depth = load_depth(depth_path)
         rgb = Image.fromarray(rgb)
@@ -159,7 +168,8 @@ def integrate(flags, data):
         volume.integrate(rgbd, intrinsics, np.linalg.inv(T_WC))
     mesh = volume.extract_triangle_mesh()
     mesh.compute_vertex_normals()
-    return mesh
+    pcd = volume.extract_point_cloud()
+    return mesh, pcd
 
 
 def validate(flags):
@@ -189,9 +199,11 @@ def main():
     if flags.point_clouds:
         geometries += point_clouds(flags, data)
     if flags.integrate:
-        mesh = integrate(flags, data)
+        mesh, pcd = integrate(flags, data)
         if flags.mesh_filename is not None:
             o3d.io.write_triangle_mesh(flags.mesh_filename, mesh)
+        if flags.pointcloud_filename is not None:
+            o3d.io.write_point_cloud(flags.pointcloud_filename, pcd)
         geometries += [mesh]
     o3d.visualization.draw_geometries(geometries)
 
